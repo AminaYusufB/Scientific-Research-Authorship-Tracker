@@ -2,6 +2,10 @@
 (define-constant ERR-PAPER-EXISTS (err u101))
 (define-constant ERR-PAPER-NOT-FOUND (err u102))
 (define-constant ERR-INVALID-CONTRIBUTION (err u103))
+(define-constant ERR-REVIEW-EXISTS (err u104))
+(define-constant ERR-REVIEW-NOT-FOUND (err u105))
+(define-constant ERR-INVALID-SCORE (err u106))
+(define-constant ERR-SELF-REVIEW (err u107))
 
 (define-data-var dao-treasury uint u0)
 
@@ -23,6 +27,24 @@
         papers-authored: uint,
         total-citations: uint,
         contribution-score: uint
+    }
+)
+
+(define-map paper-reviews
+    { paper-hash: (buff 32), reviewer: principal }
+    {
+        score: uint,
+        timestamp: uint,
+        review-text: (string-ascii 500)
+    }
+)
+
+(define-map reviewer-stats
+    principal
+    {
+        reviews-completed: uint,
+        average-score-given: uint,
+        reputation-score: uint
     }
 )
 
@@ -150,4 +172,62 @@
 
 (define-read-only (get-researcher-metrics (researcher principal))
     (ok (unwrap! (map-get? researcher-stats researcher) ERR-NOT-AUTHORIZED))
+)
+
+(define-public (submit-review (paper-hash (buff 32)) (score uint) (review-text (string-ascii 500)))
+    (let
+        (
+            (reviewer tx-sender)
+            (paper (unwrap! (map-get? papers {paper-hash: paper-hash}) ERR-PAPER-NOT-FOUND))
+            (current-time burn-block-height)
+        )
+        (asserts! (not (is-eq reviewer (get author paper))) ERR-SELF-REVIEW)
+        (asserts! (and (>= score u1) (<= score u10)) ERR-INVALID-SCORE)
+        (asserts! (is-none (map-get? paper-reviews {paper-hash: paper-hash, reviewer: reviewer})) ERR-REVIEW-EXISTS)
+        
+        (map-set paper-reviews
+            {paper-hash: paper-hash, reviewer: reviewer}
+            {
+                score: score,
+                timestamp: current-time,
+                review-text: review-text
+            }
+        )
+        
+        (match (map-get? reviewer-stats reviewer)
+            prev-stats
+            (let
+                (
+                    (total-reviews (get reviews-completed prev-stats))
+                    (prev-avg (get average-score-given prev-stats))
+                    (new-avg (/ (+ (* prev-avg total-reviews) score) (+ total-reviews u1)))
+                )
+                (map-set reviewer-stats
+                    reviewer
+                    {
+                        reviews-completed: (+ total-reviews u1),
+                        average-score-given: new-avg,
+                        reputation-score: (+ (get reputation-score prev-stats) u10)
+                    }
+                )
+            )
+            (map-set reviewer-stats
+                reviewer
+                {
+                    reviews-completed: u1,
+                    average-score-given: score,
+                    reputation-score: u10
+                }
+            )
+        )
+        (ok true)
+    )
+)
+
+(define-read-only (get-paper-review (paper-hash (buff 32)) (reviewer principal))
+    (ok (unwrap! (map-get? paper-reviews {paper-hash: paper-hash, reviewer: reviewer}) ERR-REVIEW-NOT-FOUND))
+)
+
+(define-read-only (get-reviewer-stats (reviewer principal))
+    (ok (unwrap! (map-get? reviewer-stats reviewer) ERR-NOT-AUTHORIZED))
 )
