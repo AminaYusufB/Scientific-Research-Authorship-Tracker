@@ -6,8 +6,14 @@
 (define-constant ERR-REVIEW-NOT-FOUND (err u105))
 (define-constant ERR-INVALID-SCORE (err u106))
 (define-constant ERR-SELF-REVIEW (err u107))
+(define-constant ERR-BOUNTY-NOT-FOUND (err u108))
+(define-constant ERR-BOUNTY-INACTIVE (err u109))
+(define-constant ERR-INSUFFICIENT-FUNDS (err u110))
+(define-constant ERR-BOUNTY-EXPIRED (err u111))
+(define-constant ERR-SOLUTION-EXISTS (err u112))
 
 (define-data-var dao-treasury uint u0)
+(define-data-var bounty-counter uint u0)
 
 (define-map papers 
     { paper-hash: (buff 32) }
@@ -45,6 +51,28 @@
         reviews-completed: uint,
         average-score-given: uint,
         reputation-score: uint
+    }
+)
+
+(define-map research-bounties
+    uint
+    {
+        creator: principal,
+        title: (string-ascii 256),
+        description: (string-ascii 1000),
+        reward: uint,
+        expiration: uint,
+        solved: bool,
+        solver: (optional principal)
+    }
+)
+
+(define-map bounty-solutions
+    { bounty-id: uint, solver: principal }
+    {
+        solution-hash: (buff 32),
+        timestamp: uint,
+        validated: bool
     }
 )
 
@@ -230,4 +258,94 @@
 
 (define-read-only (get-reviewer-stats (reviewer principal))
     (ok (unwrap! (map-get? reviewer-stats reviewer) ERR-NOT-AUTHORIZED))
+)
+
+(define-public (create-bounty (title (string-ascii 256)) (description (string-ascii 1000)) (reward uint) (duration uint))
+    (let
+        (
+            (creator tx-sender)
+            (bounty-id (+ (var-get bounty-counter) u1))
+            (current-time burn-block-height)
+            (expiration (+ current-time duration))
+        )
+        (asserts! (>= (stx-get-balance creator) reward) ERR-INSUFFICIENT-FUNDS)
+        
+        (try! (stx-transfer? reward creator (as-contract tx-sender)))
+        
+        (map-set research-bounties
+            bounty-id
+            {
+                creator: creator,
+                title: title,
+                description: description,
+                reward: reward,
+                expiration: expiration,
+                solved: false,
+                solver: none
+            }
+        )
+        
+        (var-set bounty-counter bounty-id)
+        (ok bounty-id)
+    )
+)
+
+(define-public (submit-solution (bounty-id uint) (solution-hash (buff 32)))
+    (let
+        (
+            (solver tx-sender)
+            (bounty (unwrap! (map-get? research-bounties bounty-id) ERR-BOUNTY-NOT-FOUND))
+            (current-time burn-block-height)
+        )
+        (asserts! (< current-time (get expiration bounty)) ERR-BOUNTY-EXPIRED)
+        (asserts! (not (get solved bounty)) ERR-BOUNTY-INACTIVE)
+        (asserts! (is-none (map-get? bounty-solutions {bounty-id: bounty-id, solver: solver})) ERR-SOLUTION-EXISTS)
+        
+        (map-set bounty-solutions
+            {bounty-id: bounty-id, solver: solver}
+            {
+                solution-hash: solution-hash,
+                timestamp: current-time,
+                validated: false
+            }
+        )
+        (ok true)
+    )
+)
+
+(define-public (validate-solution (bounty-id uint) (solver principal))
+    (let
+        (
+            (bounty (unwrap! (map-get? research-bounties bounty-id) ERR-BOUNTY-NOT-FOUND))
+            (solution (unwrap! (map-get? bounty-solutions {bounty-id: bounty-id, solver: solver}) ERR-REVIEW-NOT-FOUND))
+            (reward (get reward bounty))
+        )
+        (asserts! (is-eq tx-sender (get creator bounty)) ERR-NOT-AUTHORIZED)
+        (asserts! (not (get solved bounty)) ERR-BOUNTY-INACTIVE)
+        
+        (map-set research-bounties
+            bounty-id
+            (merge bounty {solved: true, solver: (some solver)})
+        )
+        
+        (map-set bounty-solutions
+            {bounty-id: bounty-id, solver: solver}
+            (merge solution {validated: true})
+        )
+        
+        (try! (as-contract (stx-transfer? reward tx-sender solver)))
+        (ok true)
+    )
+)
+
+(define-read-only (get-bounty (bounty-id uint))
+    (ok (unwrap! (map-get? research-bounties bounty-id) ERR-BOUNTY-NOT-FOUND))
+)
+
+(define-read-only (get-solution (bounty-id uint) (solver principal))
+    (ok (unwrap! (map-get? bounty-solutions {bounty-id: bounty-id, solver: solver}) ERR-REVIEW-NOT-FOUND))
+)
+
+(define-read-only (get-active-bounties)
+    (ok (var-get bounty-counter))
 )
