@@ -11,6 +11,7 @@
 (define-constant ERR-INSUFFICIENT-FUNDS (err u110))
 (define-constant ERR-BOUNTY-EXPIRED (err u111))
 (define-constant ERR-SOLUTION-EXISTS (err u112))
+(define-constant ERR-ALREADY-ENDORSED (err u113))
 
 (define-data-var dao-treasury uint u0)
 (define-data-var bounty-counter uint u0)
@@ -32,7 +33,8 @@
     {
         papers-authored: uint,
         total-citations: uint,
-        contribution-score: uint
+        contribution-score: uint,
+        endorsements-received: uint
     }
 )
 
@@ -76,6 +78,13 @@
     }
 )
 
+(define-map paper-endorsements
+    { paper-hash: (buff 32), endorser: principal }
+    {
+        timestamp: uint
+    }
+)
+
 (define-non-fungible-token research-token (buff 32))
 
 (define-public (publish-paper (paper-hash (buff 32)) (title (string-ascii 256)))
@@ -109,7 +118,8 @@
                 {
                     papers-authored: (+ (get papers-authored prev-stats) u1),
                     total-citations: (get total-citations prev-stats),
-                    contribution-score: (+ (get contribution-score prev-stats) u100)
+                    contribution-score: (+ (get contribution-score prev-stats) u100),
+                    endorsements-received: (get endorsements-received prev-stats)
                 }
             )
             (map-set researcher-stats
@@ -117,7 +127,8 @@
                 {
                     papers-authored: u1,
                     total-citations: u0,
-                    contribution-score: u100
+                    contribution-score: u100,
+                    endorsements-received: u0
                 }
             )
         )
@@ -149,7 +160,8 @@
                 {
                     papers-authored: u0,
                     total-citations: u1,
-                    contribution-score: u0
+                    contribution-score: u0,
+                    endorsements-received: u0
                 }
             )
         )
@@ -186,7 +198,8 @@
                 {
                     papers-authored: u0,
                     total-citations: u0,
-                    contribution-score: weight
+                    contribution-score: weight,
+                    endorsements-received: u0
                 }
             )
         )
@@ -348,4 +361,44 @@
 
 (define-read-only (get-active-bounties)
     (ok (var-get bounty-counter))
+)
+
+(define-public (endorse-paper (paper-hash (buff 32)))
+    (let
+        (
+            (endorser tx-sender)
+            (paper (unwrap! (map-get? papers {paper-hash: paper-hash}) ERR-PAPER-NOT-FOUND))
+            (author (get author paper))
+            (current-time burn-block-height)
+        )
+        (asserts! (not (is-eq endorser author)) ERR-NOT-AUTHORIZED)
+        (asserts! (is-none (map-get? paper-endorsements {paper-hash: paper-hash, endorser: endorser})) ERR-ALREADY-ENDORSED)
+        (map-set paper-endorsements
+            {paper-hash: paper-hash, endorser: endorser}
+            {
+                timestamp: current-time
+            }
+        )
+        (match (map-get? researcher-stats author)
+            prev-stats
+            (map-set researcher-stats
+                author
+                (merge prev-stats {endorsements-received: (+ (get endorsements-received prev-stats) u1)})
+            )
+            (map-set researcher-stats
+                author
+                {
+                    papers-authored: u0,
+                    total-citations: u0,
+                    contribution-score: u0,
+                    endorsements-received: u1
+                }
+            )
+        )
+        (ok true)
+    )
+)
+
+(define-read-only (get-endorsement (paper-hash (buff 32)) (endorser principal))
+    (ok (unwrap! (map-get? paper-endorsements {paper-hash: paper-hash, endorser: endorser}) ERR-NOT-AUTHORIZED))
 )

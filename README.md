@@ -1,4 +1,4 @@
-# 🔬 Scientific Research Authorship Tracker
+#  Scientific Research Authorship Tracker
 
 A decentralized smart contract system for tracking research authorship and contributions on the Stacks blockchain.
 
@@ -9,6 +9,7 @@ A decentralized smart contract system for tracking research authorship and contr
 - 📚 Citation management
 - 📊 Researcher metrics
 - 🔒 Immutable research logs
+- 👍 Paper endorsement system
 
 ## 🚀 Contract Functions
 
@@ -30,12 +31,19 @@ Adds citations to published papers and updates citation metrics.
 ```
 Assigns contribution credit to researchers with weighted scores.
 
+### Endorsing Papers
+```clarity
+(endorse-paper paper-hash)
+```
+Allows researchers to endorse valuable papers, boosting author reputation.
+
 ### Viewing Data
 ```clarity
 (get-paper-details paper-hash)
 (get-researcher-metrics researcher)
+(get-endorsement paper-hash endorser)
 ```
-Retrieve paper details and researcher statistics.
+Retrieve paper details, researcher statistics, and endorsement information.
 
 ## 🛠️ Usage
 
@@ -57,6 +65,7 @@ Retrieve paper details and researcher statistics.
 - Papers authored
 - Total citations received
 - Contribution score
+- Endorsements received
 ```
 
 Git commit message:
