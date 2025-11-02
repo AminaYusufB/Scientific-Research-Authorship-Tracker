@@ -12,6 +12,9 @@
 (define-constant ERR-BOUNTY-EXPIRED (err u111))
 (define-constant ERR-SOLUTION-EXISTS (err u112))
 (define-constant ERR-ALREADY-ENDORSED (err u113))
+(define-constant ERR-PROPOSAL-NOT-FOUND (err u114))
+(define-constant ERR-PROPOSAL-NOT-PENDING (err u115))
+(define-constant ERR-NOT-INVITED (err u116))
 
 (define-data-var dao-treasury uint u0)
 (define-data-var bounty-counter uint u0)
@@ -79,11 +82,26 @@
 )
 
 (define-map paper-endorsements
-    { paper-hash: (buff 32), endorser: principal }
-    {
-        timestamp: uint
-    }
-)
+     { paper-hash: (buff 32), endorser: principal }
+     {
+         timestamp: uint
+     }
+ )
+
+(define-map collaboration-proposals
+     uint
+     {
+         initiator: principal,
+         title: (string-ascii 256),
+         description: (string-ascii 1000),
+         invited-researchers: (list 20 principal),
+         accepted-researchers: (list 20 principal),
+         status: (string-ascii 10),
+         timestamp: uint
+     }
+ )
+
+(define-data-var proposal-counter uint u0)
 
 (define-non-fungible-token research-token (buff 32))
 
@@ -400,5 +418,71 @@
 )
 
 (define-read-only (get-endorsement (paper-hash (buff 32)) (endorser principal))
-    (ok (unwrap! (map-get? paper-endorsements {paper-hash: paper-hash, endorser: endorser}) ERR-NOT-AUTHORIZED))
-)
+     (ok (unwrap! (map-get? paper-endorsements {paper-hash: paper-hash, endorser: endorser}) ERR-NOT-AUTHORIZED))
+ )
+
+(define-public (create-collaboration-proposal (title (string-ascii 256)) (description (string-ascii 1000)) (invited-researchers (list 20 principal)))
+     (let
+         (
+             (initiator tx-sender)
+             (proposal-id (+ (var-get proposal-counter) u1))
+             (current-time burn-block-height)
+         )
+         (asserts! (> (len invited-researchers) u0) ERR-NOT-AUTHORIZED)
+         (map-set collaboration-proposals
+             proposal-id
+             {
+                 initiator: initiator,
+                 title: title,
+                 description: description,
+                 invited-researchers: invited-researchers,
+                 accepted-researchers: (list),
+                 status: "pending",
+                 timestamp: current-time
+             }
+         )
+         (var-set proposal-counter proposal-id)
+         (ok proposal-id)
+     )
+ )
+
+(define-public (accept-collaboration-proposal (proposal-id uint))
+     (let
+         (
+             (researcher tx-sender)
+             (proposal (unwrap! (map-get? collaboration-proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
+         )
+         (asserts! (is-eq (get status proposal) "pending") ERR-PROPOSAL-NOT-PENDING)
+         (asserts! (is-some (index-of (get invited-researchers proposal) researcher)) ERR-NOT-INVITED)
+         (asserts! (is-none (index-of (get accepted-researchers proposal) researcher)) ERR-NOT-AUTHORIZED)
+         (map-set collaboration-proposals
+             proposal-id
+             (merge proposal {accepted-researchers: (unwrap! (as-max-len? (append (get accepted-researchers proposal) researcher) u20) ERR-NOT-AUTHORIZED)})
+         )
+         (ok true)
+     )
+ )
+
+(define-public (finalize-collaboration-proposal (proposal-id uint))
+     (let
+         (
+             (initiator tx-sender)
+             (proposal (unwrap! (map-get? collaboration-proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
+         )
+         (asserts! (is-eq initiator (get initiator proposal)) ERR-NOT-AUTHORIZED)
+         (asserts! (is-eq (get status proposal) "pending") ERR-PROPOSAL-NOT-PENDING)
+         (map-set collaboration-proposals
+             proposal-id
+             (merge proposal {status: "finalized"})
+         )
+         (ok true)
+     )
+ )
+
+(define-read-only (get-collaboration-proposal (proposal-id uint))
+     (ok (unwrap! (map-get? collaboration-proposals proposal-id) ERR-PROPOSAL-NOT-FOUND))
+ )
+
+(define-read-only (get-active-proposals)
+     (ok (var-get proposal-counter))
+ )

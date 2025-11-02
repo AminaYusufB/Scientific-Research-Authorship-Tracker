@@ -10,6 +10,7 @@ A decentralized smart contract system for tracking research authorship and contr
 - 📊 Researcher metrics
 - 🔒 Immutable research logs
 - 👍 Paper endorsement system
+- 🤝 Collaboration proposal system
 
 ## 🚀 Contract Functions
 
@@ -52,6 +53,7 @@ Retrieve paper details, researcher statistics, and endorsement information.
    - Publish research papers
    - Track citations
    - Manage contributors
+   - Create and manage collaboration proposals
    - View research metrics
 
 ## 🔗 Requirements
@@ -94,3 +96,33 @@ Testing completed:
 - Contract deployment
 - Core function execution
 - Data persistence verification
+## 🤝 Collaboration Proposals
+
+- 📋 Proposal creation for research collaborations
+- 👥 Researcher invitations and acceptances
+- ✅ Proposal finalization for team formation
+
+### Creating Collaboration Proposals
+```clarity
+(create-collaboration-proposal title description invited-researchers)
+```
+Initiates a new collaboration proposal with invited researchers.
+
+### Accepting Proposals
+```clarity
+(accept-collaboration-proposal proposal-id)
+```
+Allows invited researchers to join the collaboration.
+
+### Finalizing Collaborations
+```clarity
+(finalize-collaboration-proposal proposal-id)
+```
+Locks in the collaboration team once all acceptances are received.
+
+### Viewing Proposals
+```clarity
+(get-collaboration-proposal proposal-id)
+(get-active-proposals)
+```
+Retrieve proposal details and count of active proposals.
