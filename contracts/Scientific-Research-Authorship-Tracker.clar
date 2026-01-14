@@ -68,7 +68,8 @@
         reward: uint,
         expiration: uint,
         solved: bool,
-        solver: (optional principal)
+        solver: (optional principal),
+        cancelled: bool
     }
 )
 
@@ -312,7 +313,8 @@
                 reward: reward,
                 expiration: expiration,
                 solved: false,
-                solver: none
+                solver: none,
+                cancelled: false
             }
         )
         
@@ -330,6 +332,7 @@
         )
         (asserts! (< current-time (get expiration bounty)) ERR-BOUNTY-EXPIRED)
         (asserts! (not (get solved bounty)) ERR-BOUNTY-INACTIVE)
+        (asserts! (not (get cancelled bounty)) ERR-BOUNTY-INACTIVE)
         (asserts! (is-none (map-get? bounty-solutions {bounty-id: bounty-id, solver: solver})) ERR-SOLUTION-EXISTS)
         
         (map-set bounty-solutions
@@ -353,6 +356,7 @@
         )
         (asserts! (is-eq tx-sender (get creator bounty)) ERR-NOT-AUTHORIZED)
         (asserts! (not (get solved bounty)) ERR-BOUNTY-INACTIVE)
+        (asserts! (not (get cancelled bounty)) ERR-BOUNTY-INACTIVE)
         
         (map-set research-bounties
             bounty-id
@@ -365,6 +369,27 @@
         )
         
         (try! (as-contract (stx-transfer? reward tx-sender solver)))
+        (ok true)
+    )
+)
+
+(define-public (cancel-bounty (bounty-id uint))
+    (let
+        (
+            (bounty (unwrap! (map-get? research-bounties bounty-id) ERR-BOUNTY-NOT-FOUND))
+            (creator (get creator bounty))
+            (reward (get reward bounty))
+            (current-time burn-block-height)
+        )
+        (asserts! (is-eq tx-sender creator) ERR-NOT-AUTHORIZED)
+        (asserts! (not (get solved bounty)) ERR-BOUNTY-INACTIVE)
+        (asserts! (not (get cancelled bounty)) ERR-BOUNTY-INACTIVE)
+        (asserts! (< current-time (get expiration bounty)) ERR-BOUNTY-EXPIRED)
+        (map-set research-bounties
+            bounty-id
+            (merge bounty {cancelled: true})
+        )
+        (try! (as-contract (stx-transfer? reward tx-sender creator)))
         (ok true)
     )
 )
@@ -485,4 +510,44 @@
 
 (define-read-only (get-active-proposals)
      (ok (var-get proposal-counter))
+ )
+
+(define-public (transfer-paper-ownership (paper-hash (buff 32)) (new-owner principal))
+     (let
+         (
+             (paper (unwrap! (map-get? papers {paper-hash: paper-hash}) ERR-PAPER-NOT-FOUND))
+             (old-author (get author paper))
+         )
+         (asserts! (is-eq tx-sender old-author) ERR-NOT-AUTHORIZED)
+         (try! (nft-transfer? research-token paper-hash tx-sender new-owner))
+         (map-set papers
+             {paper-hash: paper-hash}
+             (merge paper {author: new-owner})
+         )
+         (match (map-get? researcher-stats old-author)
+             old-stats
+             (map-set researcher-stats
+                 old-author
+                 (merge old-stats {papers-authored: (- (get papers-authored old-stats) u1)})
+             )
+             true
+         )
+         (match (map-get? researcher-stats new-owner)
+             new-stats
+             (map-set researcher-stats
+                 new-owner
+                 (merge new-stats {papers-authored: (+ (get papers-authored new-stats) u1)})
+             )
+             (map-set researcher-stats
+                 new-owner
+                 {
+                     papers-authored: u1,
+                     total-citations: u0,
+                     contribution-score: u0,
+                     endorsements-received: u0
+                 }
+             )
+         )
+         (ok true)
+     )
  )

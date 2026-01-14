@@ -11,6 +11,7 @@ A decentralized smart contract system for tracking research authorship and contr
 - 🔒 Immutable research logs
 - 👍 Paper endorsement system
 - 🤝 Collaboration proposal system
+- 🛑 Bounty cancellation system
 
 ## 🚀 Contract Functions
 
@@ -126,3 +127,15 @@ Locks in the collaboration team once all acceptances are received.
 (get-active-proposals)
 ```
 Retrieve proposal details and count of active proposals.
+
+## 🔄 Paper Ownership Transfer
+
+- 📤 Seamless transfer of paper ownership and NFT
+- 👤 Dynamic authorship updates
+- 📈 Automated researcher statistics adjustments
+
+### Transferring Ownership
+```clarity
+(transfer-paper-ownership paper-hash new-owner)
+```
+Allows the current author to transfer paper ownership to another researcher, updating all associated records.
